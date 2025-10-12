@@ -97,6 +97,6 @@ The project uses a monorepo structure with NPM Workspaces.
   npm run start:dev
   ```
 
-The server will run on ```http://localhost:8080```. You can verify it's working by hitting the test endpoint: ```curl http://localhost:8080/test-api```.
+  The server will run on ```http://localhost:8080```. You can verify it's working by hitting the test endpoint: ```curl http://localhost:8080/test-api```.
 
 You now have a secure, running foundation! The next phase involves implementing the complex logic inside the NestJS service.
