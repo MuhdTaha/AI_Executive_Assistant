@@ -1,0 +1,38 @@
+{
+  "name": "ai_executive_assistant",
+  "version": "1.0.0",
+  "description": "AI-powered scheduling and task management application.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MuhdTaha/AI_Executive_Assistant.git"
+  },
+  "keywords": [
+    "nestjs",
+    "react",
+    "typescript",
+    "supabase"
+  ],
+  "author": "",
+  "license": "ISC",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "bugs": {
+    "url": "https://github.com/MuhdTaha/AI_Executive_Assistant/issues"
+  },
+  "homepage": "https://github.com/MuhdTaha/AI_Executive_Assistant#readme",
+  "dependencies": {
+    "@google-cloud/tasks": "^6.2.0",
+    "@google/genai": "^1.23.0",
+    "@googleapis/calendar": "^12.0.0",
+    "@nestjs/config": "^4.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.7.1"
+  }
+}
