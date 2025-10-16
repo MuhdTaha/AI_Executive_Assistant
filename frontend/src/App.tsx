@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LogIn, Calendar, CheckCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js'; 
+import Dashboard from './dashboard/Dashboard';
 
 // --- CONFIGURATION PLACEHOLDERS ---
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -27,6 +28,19 @@ interface UserSession {
 const App: React.FC = () => {
     const [session, setSession] = useState<UserSession | null>(null);
     const [loading, setLoading] = useState(true);
+    const [page, setPage] = useState<'home' | 'dashboard'>('home');
+
+    // --- EFFECTS ---
+    // listten for hash changes to navigate between pages
+    useEffect(() => {
+        const handleHashChange = () => {
+            if (window.location.hash === '#dashboard') setPage('dashboard');
+            else setPage('home');
+        };
+        window.addEventListener('hashchange', handleHashChange);
+        handleHashChange();
+        return () => window.removeEventListener('hashchange', handleHashChange);
+    }, []);
 
     // 1. Initial Session Check and Listener Setup
     useEffect(() => {
@@ -108,6 +122,10 @@ const App: React.FC = () => {
         setSession(null);
     };
 
+    // 4. Navigation Handler (Dashboard)
+    const goToDashboard = () => {
+        window.location.hash = '#dashboard';
+    };
 
     // --- RENDERING LOGIC ---
 
@@ -134,11 +152,12 @@ const App: React.FC = () => {
                 Your AI Executive Assistant is ready to plan your day.
             </p>
             <div className="space-y-4">
+                {/* TODO: Implement Dashboard Navigation */}
                 <button
-                    onClick={() => alert("Go to Planning Dashboard - Next Feature")}
+                    onClick={goToDashboard}
                     className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-8 rounded-lg shadow-lg transform transition duration-150 hover:scale-[1.02] flex items-center justify-center"
                 >
-                    <CheckCircle className="w-5 h-5 mr-2" /> Start Daily Plan
+                    <CheckCircle className="w-5 h-5 mr-2" /> Dashboard
                 </button>
                 <button
                     onClick={handleSignOut}
@@ -170,6 +189,9 @@ const App: React.FC = () => {
         </>
     );
 
+    if (session && page === 'dashboard') {
+        return <Dashboard />;
+    }
 
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
