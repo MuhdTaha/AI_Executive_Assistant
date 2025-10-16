@@ -3,6 +3,8 @@
 /node_modules
 /build
 
+oauth_client_secret.json
+
 # Logs
 logs
 *.log
