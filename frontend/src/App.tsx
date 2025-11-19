@@ -5,9 +5,24 @@ import Dashboard from './dashboard/Dashboard';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+// Google OAuth config for the *direct* Calendar connect flow
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+const GOOGLE_REDIRECT_URI = import.meta.env.VITE_GOOGLE_REDIRECT_URI;
+
+// Initialize Supabase client
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// Shared between Supabase Sign-In and our direct Google OAuth flow.
+const GOOGLE_OAUTH_SCOPES = [
+  'email',
+  'profile',
+  'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/tasks',
+].join(' ');
+
 interface UserSession {
+  id: string;
   email: string;
   full_name: string;
 }
@@ -17,144 +32,265 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState<'home' | 'dashboard'>('home');
 
-  // Handle hash changes
+  // --- Handle hash changes for simple routing ---
   useEffect(() => {
     const handleHashChange = () => {
-      setPage(window.location.hash === '#dashboard' ? 'dashboard' : 'home');
+      if (window.location.hash === '#dashboard') setPage('dashboard');
+      else setPage('home');
     };
     window.addEventListener('hashchange', handleHashChange);
     handleHashChange();
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // Session management
-  useEffect(() => {
-    const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        const ensuredUser = await ensureUser(session.access_token);
-        console.log('Ensured user:', ensuredUser);
-
-        setSession({
-          email: session.user.email || '',
-          full_name: session.user.user_metadata.full_name || 'User'
-        });
-      } else {
-        setSession(null);
-      }
-      setLoading(false);
-    };
-
-    getSession();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        await ensureUser(session.access_token);
-        setSession({
-          email: session.user.email || '',
-          full_name: session.user.user_metadata.full_name || 'User'
-        });
-      } else {
-        setSession(null);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  // Google Sign-In
-  const handleGoogleSignIn = () => {
-    setLoading(true);
-    supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        scopes: 'email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks',
-        redirectTo: `${window.location.origin}${window.location.pathname}` // Redirect back to same page
-      },
-    });
-  };
-
-  const ensureUser = async (token: string) => {
+  // --- Optional: ensure user exists in backend users table ---
+  const ensureUser = async (accessToken: string) => {
     try {
-      const response = await fetch(`http://localhost:8080/api/auth/ensure-user`, {
+      const res = await fetch('http://localhost:8080/api/auth/ensure-user', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`, // pass Supabase access token
+          Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({}), // body can be empty, backend uses token to get user info
+        body: JSON.stringify({}),
       });
-
-      if (!response.ok) {
-        console.error('Failed to ensure user:', await response.text());
-        return null;
+      if (!res.ok) {
+        console.error('Failed to ensure user:', await res.text());
       }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Error ensuring user:', error);
-      return null;
+    } catch (err) {
+      console.error('Error ensuring user:', err);
     }
   };
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
+  // --- Initial session check + auth state listener ---
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (session && session.user) {
+          // make sure there is a matching row in the backend users table
+          await ensureUser(session.access_token);
+
+          setSession({
+            id: session.user.id,
+            email: session.user.email || '',
+            full_name: session.user.user_metadata.full_name || 'User',
+          });
+        } else {
+          setSession(null);
+        }
+      } catch (error) {
+        console.error('Error checking session:', error);
+        setSession(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkSession();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        if (session && session.user) {
+          await ensureUser(session.access_token);
+          setSession({
+            id: session.user.id,
+            email: session.user.email || '',
+            full_name: session.user.user_metadata.full_name || 'User',
+          });
+        } else {
+          setSession(null);
+        }
+      },
+    );
+
+    return () => {
+      if (authListener && authListener.subscription) {
+        authListener.subscription.unsubscribe();
+      }
+    };
+  }, []);
+
+  // --- Handler for Supabase Google Sign In ---
+  const handleGoogleSignIn = async () => {
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          scopes: GOOGLE_OAUTH_SCOPES,
+          redirectTo: window.location.origin,
+        },
+      });
+
+      if (error) {
+        console.error('Error initiating Google Sign In:', error.message);
+        setLoading(false);
+      }
+      // On success, browser redirects; no further JS here.
+    } catch (error) {
+      console.error('Error initiating Google Sign In:', error);
+      setLoading(false);
+    }
   };
 
-  const goToDashboard = () => { 
-    window.location.hash = '#dashboard'; 
+  // --- Handler for *connecting* Google Calendar (direct OAuth) ---
+  const handleConnectGoogleCalendar = () => {
+    if (!session) return;
+
+    if (!GOOGLE_CLIENT_ID || !GOOGLE_REDIRECT_URI) {
+      console.error(
+        'VITE_GOOGLE_CLIENT_ID or VITE_GOOGLE_REDIRECT_URI is not set in the frontend env.',
+      );
+      return;
+    }
+
+    const state = JSON.stringify({ userId: session.id });
+
+    const params = new URLSearchParams({
+      client_id: GOOGLE_CLIENT_ID,
+      redirect_uri: GOOGLE_REDIRECT_URI,
+      response_type: 'code',
+      access_type: 'offline',
+      prompt: 'consent',
+      scope: GOOGLE_OAUTH_SCOPES,
+      state,
+    });
+
+    window.location.href =
+      `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
   };
-  
+
+  // --- Sign out handler ---
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+    setPage('home');
+  };
+
+  const goToDashboard = () => {
+    window.location.hash = '#dashboard';
+  };
+
+  // --- Loading screen ---
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-indigo-600 font-medium flex items-center">
-          <svg className="animate-spin -ml-1 mr-3 h-5 w-5" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+        <div className="text-xl text-indigo-600 font-medium flex items-center">
+          <svg
+            className="animate-spin -ml-1 mr-3 h-6 w-6 text-indigo-600"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            ></circle>
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+            ></path>
           </svg>
-          Loading...
+          Connecting to Supabase...
         </div>
       </div>
     );
   }
-  
+
+  // --- If logged in and on #dashboard, show dashboard ---
   if (session && page === 'dashboard') {
     return <Dashboard />;
   }
 
+  // --- UI blocks for signed-in vs signed-out home ---
+  const WelcomeContent = (
+    <>
+      <div className="flex flex-col items-center mb-6">
+        <CheckCircle className="w-12 h-12 text-green-500 mb-4" />
+        <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-2">
+          Welcome back{session?.full_name ? `, ${session.full_name}` : ''}!
+        </h1>
+        <p className="text-gray-600">
+          You&apos;re signed in as{' '}
+          <span className="font-semibold text-indigo-600">
+            {session?.email}
+          </span>
+        </p>
+      </div>
+
+      <p className="text-lg text-gray-600 mb-6">Next steps:</p>
+
+      <div className="flex flex-col sm:flex-row gap-3 justify-center mb-6">
+        <button
+          onClick={goToDashboard}
+          className="px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-md transition-transform transform hover:scale-105"
+        >
+          Open Dashboard
+        </button>
+
+        <button
+          onClick={handleConnectGoogleCalendar}
+          className="px-5 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-semibold shadow-md transition-transform transform hover:scale-105 flex items-center justify-center"
+        >
+          <Calendar className="w-5 h-5 mr-2" />
+          Connect Google Calendar
+        </button>
+
+        <button
+          onClick={handleSignOut}
+          className="px-5 py-3 rounded-xl bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold transition-transform transform hover:scale-105"
+        >
+          Sign Out
+        </button>
+      </div>
+
+      <p className="text-sm text-gray-500">
+        Connecting your calendar lets the assistant fetch busy times and compute
+        free blocks for scheduling.
+      </p>
+    </>
+  );
+
+  const SignInContent = (
+    <>
+      <div className="flex flex-col items-center mb-6">
+        <Calendar className="w-12 h-12 text-indigo-600 mb-4" />
+        <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-2">
+          AI Executive Assistant
+        </h1>
+      </div>
+      <p className="text-xl text-gray-600 mb-8 max-w-lg text-center">
+        Intelligent time management built for students and busy professionals.
+        Connects to your Google Calendar and uses AI to schedule your tasks
+        perfectly.
+      </p>
+      <button
+        onClick={handleGoogleSignIn}
+        className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-semibold shadow-lg transition-all duration-150 hover:scale-105 flex items-center justify-center text-lg"
+      >
+        <LogIn className="w-6 h-6 mr-3" /> Sign In with Google
+      </button>
+      <p className="mt-6 text-sm text-gray-500 flex items-center justify-center">
+        <Calendar className="w-4 h-4 mr-1 text-gray-500" /> Requires access to
+        Google Calendar &amp; Tasks.
+      </p>
+    </>
+  );
+
+  // --- Home screen (signed in vs signed out) ---
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
       <div className="bg-white p-8 sm:p-12 rounded-2xl shadow-2xl w-full max-w-xl text-center">
-        {session ? (
-          <>
-            <h1 className="text-4xl md:text-5xl font-extrabold mb-4">
-              Welcome Back, {session.full_name}!
-            </h1>
-            <p className="text-xl mb-8">Your AI Executive Assistant is ready to plan your day.</p>
-            <div className="space-y-4">
-              <button onClick={goToDashboard} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white py-3 px-8 rounded-lg flex items-center justify-center">
-                <CheckCircle className="w-5 h-5 mr-2" /> Dashboard
-              </button>
-              <button onClick={handleSignOut} className="w-full sm:w-auto bg-white hover:bg-gray-100 text-gray-800 py-3 px-8 border rounded-lg flex items-center justify-center">
-                <LogIn className="w-5 h-5 mr-2 rotate-180" /> Sign Out
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <h1 className="text-4xl md:text-6xl font-extrabold mb-4">AI Executive Assistant</h1>
-            <p className="text-xl mb-8 max-w-lg text-center">
-              Intelligent time management built for students. Syncs your calendar and uses AI to schedule your tasks perfectly.
-            </p>
-            <button onClick={handleGoogleSignIn} className="bg-indigo-600 hover:bg-indigo-700 text-white py-3 px-8 rounded-lg flex items-center justify-center text-lg">
-              <LogIn className="w-6 h-6 mr-3" /> Sign In with Google
-            </button>
-            <p className="mt-6 text-sm text-gray-500 flex items-center justify-center">
-              <Calendar className="w-4 h-4 mr-1" /> Requires access to Google Calendar & Tasks.
-            </p>
-          </>
-        )}
+        {session ? WelcomeContent : SignInContent}
       </div>
     </div>
   );
