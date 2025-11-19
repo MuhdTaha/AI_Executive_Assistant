@@ -4,6 +4,14 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { CalendarController } from './calendar/calendar.controller';
 import { CalendarService } from './calendar/calendar.service';
+import { DbModule } from './db/db.module';
+import { CalendarModule } from './calendar/calendar.module';
+import { PlanningModule } from './planning/planning.module';
+import { PlanningController } from './planning.controller';
+import { GeminiService } from './gemini/gemini.service';
+import { GeminiController } from './gemini/gemini.controller';
+import { AuthService } from './auth/auth.service';
+import { TasksService } from './tasks/tasks.service';
 
 /**
  * The root module definition for the NestJS application.
@@ -16,7 +24,7 @@ import { CalendarService } from './calendar/calendar.service';
       isGlobal: true, // Makes environment variables accessible everywhere
     }),
   ],
-  controllers: [AppController, CalendarController],
-  providers: [AppService, CalendarService],
+  controllers: [AppController, CalendarController, PlanningController, GeminiController],
+  providers: [AppService, CalendarService, GeminiService, AuthService, TasksService],
 })
 export class AppModule {}
