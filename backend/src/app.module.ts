@@ -1,14 +1,18 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config'; // Used for environment variables
+import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { CalendarController } from './calendar/calendar.controller';
+import { CalendarController } from './calendar/calendar.controller'; 
 import { CalendarService } from './calendar/calendar.service';
 import { DbModule } from './db/db.module';
 import { CalendarModule } from './calendar/calendar.module';
 import { PlanningModule } from './planning/planning.module';
 import { PlanningController } from './planning.controller';
-
+import { GeminiService } from './gemini/gemini.service';
+import { GeminiController } from './gemini/gemini.controller';
+import { AuthService } from './auth/auth.service';
+import { TasksService } from './tasks/tasks.service';
+import { SupabaseAdminProvider } from './db/supabase-admin.provider';
 /**
  * The root module definition for the NestJS application.
  */
@@ -23,7 +27,10 @@ import { PlanningController } from './planning.controller';
     CalendarModule,
     PlanningModule,
   ],
-  controllers: [AppController, CalendarController, PlanningController],
-  providers: [AppService, CalendarService],
+  // Calendar & planning controllers are registered in their own modules,
+  // so we only list the root + Gemini here.
+  controllers: [AppController, CalendarController, GeminiController],
+  // CalendarService & SupabaseAdminProvider are provided by their modules.
+  providers: [AppService, CalendarService, GeminiService, AuthService, TasksService, SupabaseAdminProvider],
 })
 export class AppModule {}

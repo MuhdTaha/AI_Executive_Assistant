@@ -32,14 +32,14 @@ export class TasksRepo {
     return data ?? { tz: process.env.DEFAULT_TZ || 'America/Chicago', workday_start:'09:00', workday_end:'17:00' };
   }
 
-    async setStatus(userId: string, taskId: string, status: 'todo'|'in_progress'|'done') {
+    async setStatus(userId: string, taskId: string, status: 'todo' | 'done') {
     const { error } = await this.sb.from('tasks')
       .update({ status })
       .eq('user_id', userId).eq('id', taskId);
     if (error) throw error;
   }
 
-  async updateEstimateAndStatus(userId: string, taskId: string, estMinutes: number, status: 'todo'|'in_progress'|'done') {
+  async updateEstimateAndStatus(userId: string, taskId: string, estMinutes: number, status: 'todo'|'done') {
     const { error } = await this.sb.from('tasks')
       .update({ est_minutes: estMinutes, status })
       .eq('user_id', userId).eq('id', taskId);

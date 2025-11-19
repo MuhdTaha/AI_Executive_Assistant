@@ -14,4 +14,3 @@ export const SupabaseAdminProvider: Provider = {
     return createClient(url, key, { auth: { persistSession: false } });
   },
 };
-

@@ -1,61 +1,92 @@
-import { Controller, Get, Post, Body, Req, UseGuards, Headers } from '@nestjs/common';
+// app.controller.ts
+import { Controller, Get, Post, Body, Req, UseGuards } from '@nestjs/common';
 import { AppService } from './app.service';
+import { InsertMessageDto } from './gemini/dto/insert-message.dto';
+import { GeminiService } from './gemini/gemini.service';
+import { SupabaseAuthGuard } from './auth/supabase.guard';
+import { AuthService } from './auth/auth.service';
+import { EnsureUserDto } from './auth/dto/ensure-user.dto';
+import { TasksService } from './tasks/tasks.service';
+import { ReadyToCreateResponse, ChatResponse } from './gemini/types/chat-response.types';
 
-// NOTE: You would implement a custom AuthGuard to validate JWTs from your React client
-// For now, we'll focus on the structure.
-
-/**
- * Controller to handle all task and scheduling API requests.
- */
 @Controller('api')
 export class AppController {
-  constructor(private readonly appService: AppService) {}
+  constructor(
+    private readonly appService: AppService,
+    private readonly geminiService: GeminiService,
+    private readonly authService: AuthService,
+    private readonly tasksService: TasksService,
+  ) {}
 
-  /**
-   * Status check endpoint for Cloud Run health checks.
-   */
+  @Post('chat')
+  @UseGuards(SupabaseAuthGuard)
+  async handleChat(@Body() body: InsertMessageDto, @Req() req: any): Promise<any> {
+    console.log(`Received chat request: "${body.message}" from user: ${req.user?.id}`);
+    console.log('Received body:', body);
+    console.log('Context:', body.context);
+    console.log('Partial task:', body.partialTask);
+
+    const response: ChatResponse = await this.geminiService.generateResponse({
+      ...body,
+      userId: req.user?.id
+    });
+
+    // Use type guard to check if response is ReadyToCreateResponse
+    if (this.isReadyToCreateResponse(response) && req.user?.id) {
+      try {
+        const taskData = {
+          title: response.parsed_task.title,
+          user_id: req.user.id,
+          notes: response.parsed_task.notes || `Created from chat: "${body.message}"`,
+          due_date: response.parsed_task.due_date || null,
+          priority: response.parsed_task.priority || 'med',
+          est_minutes: response.parsed_task.est_minutes || null,
+          status: 'todo' as const,
+        };
+
+        const createdTask = await this.tasksService.createTask(taskData);
+        
+        // Return a TaskCreatedResponse
+        return {
+          ...response,
+          task_created: true,
+          task: createdTask,
+          response: `✅ Task created: "${response.parsed_task.title}"${response.parsed_task.due_date ? ` (Due: ${response.parsed_task.due_date})` : ''}${response.parsed_task.priority ? ` [${response.parsed_task.priority} priority]` : ''}${response.parsed_task.est_minutes ? ` ⏱️ ${response.parsed_task.est_minutes}min` : ''}`
+        };
+      } catch (error) {
+        console.error('Error creating task:', error);
+        return {
+          ...response,
+          response: `I understood your task but couldn't save it: ${error.message}`
+        };
+      }
+    }
+
+    return response;
+  }
+
+  // Type guard to check if response is ReadyToCreateResponse
+  private isReadyToCreateResponse(response: ChatResponse): response is ReadyToCreateResponse {
+    return (response as ReadyToCreateResponse).ready_to_create === true;
+  }
+
+  @Post('auth/ensure-user')
+  @UseGuards(SupabaseAuthGuard)
+  async ensureUser(@Body() body: EnsureUserDto, @Req() req: any) {
+    body.id = req.user.id;
+    body.email = req.user.email;
+    return this.authService.ensureUser(body);
+  }
+
   @Get('status')
   getHello(): string {
     return this.appService.getHealthStatus();
   }
 
-  @Get('calendar/events')
-  async getCalendarEvents(@Headers('authorization') authHeader: string) {
-    // Extract the Bearer token from headers
-    if (!authHeader?.startsWith('Bearer ')) {
-      return { error: 'Missing or invalid authorization header' };
-    }
-    const accessToken = authHeader.split(' ')[1];
-
-    // Use your service layer to fetch events from Google Calendar
-    try {
-      const events = await this.appService.fetchGoogleCalendarEvents(accessToken);
-      return events; // Return JSON directly to the frontend
-    } catch (error) {
-      console.error(error);
-      return { error: 'Failed to fetch events' };
-    }
-  }
-
-  /**
-   * Secure endpoint for AI Task Parsing and Clarification.
-   * This is where you will interact with the Gemini API.
-   * @param body The request body containing the user's natural language task (e.g., "finish project by Friday")
-   */
   @Post('task/parse')
-  // @UseGuards(AuthGuard) // Will be used later to ensure user is logged in
   async parseTask(@Body('taskText') taskText: string, @Req() req: any) {
-    // 1. Retrieve the user's encrypted Google Refresh Token from Supabase/database
-    //    using the user ID attached to the authenticated session/JWT (not yet implemented).
-    const userId = 'placeholder-user-id';
-
-    // 2. Pass the task text, user ID, and Calendar/Tasks context to the service layer.
-    const structuredTask = await this.appService.processTaskWithAI(
-      taskText,
-      userId,
-    );
-
-    // 3. Return the structured JSON for the frontend to confirm.
+    const userId = req.user?.id || 'placeholder-user-id';
+    const structuredTask = await this.appService.processTaskWithAI(taskText, userId);
     return structuredTask;
   }
 }
