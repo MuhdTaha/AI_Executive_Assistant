@@ -1,91 +1,152 @@
-import React, { useEffect, useState } from "react";
-import { useSupabase } from "../context/SupabaseSessionContext";
-import Tasks from "../tasks/Tasks";
+import React, { useEffect, useState } from 'react';
+import { Calendar, ListTodo } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
+import Tasks from '../tasks/Tasks';
 
-interface CalendarEvent {
+// --- Supabase client (same config as in App.tsx) ---
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// --- API base URL for backend ---
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+
+type GoogleEvent = {
   id: string;
   summary?: string;
-  start?: {
-    dateTime?: string;
-    date?: string;
-  };
-}
+  start?: { dateTime?: string; date?: string };
+  end?: { dateTime?: string; date?: string };
+};
 
 const Dashboard: React.FC = () => {
-  const { session, supabase } = useSupabase();
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [events, setEvents] = useState<GoogleEvent[]>([]);
+  const [loadingEvents, setLoadingEvents] = useState(true);
+  const [eventsError, setEventsError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!session) return;
-
     const fetchCalendarEvents = async () => {
-      setLoading(true);
-      setError("");
-
       try {
-        const response = await fetch("http://localhost:8080/api/calendar/events", {
-            headers: { authorization: `Bearer ${session.access_token}` },
-        });
+        // Get current Supabase session so we can send the access token
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.getSession();
 
-        if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.message || "Failed to fetch events");
+        if (error) {
+          console.error('Error getting Supabase session:', error);
+          setEventsError('Could not read auth session.');
+          setLoadingEvents(false);
+          return;
         }
 
-        const data = await response.json();
+        if (!session) {
+          setEventsError('You must be signed in to view calendar events.');
+          setLoadingEvents(false);
+          return;
+        }
+
+        const accessToken = session.access_token;
+
+        const res = await fetch(`${API_BASE_URL}/calendar/events`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          console.error('Calendar API error:', res.status, text);
+          setEventsError(
+            `Calendar API error (${res.status}). Check backend logs.`,
+          );
+          setLoadingEvents(false);
+          return;
+        }
+
+        const data: GoogleEvent[] = await res.json();
         setEvents(data);
-      } catch (err) {
-        console.error(err);
-        setError(err instanceof Error ? err.message : "An error occurred while fetching events");
+      } catch (err: any) {
+        console.error('Failed to fetch calendar events:', err);
+        setEventsError('Failed to fetch calendar events.');
       } finally {
-        setLoading(false);
+        setLoadingEvents(false);
       }
     };
 
     fetchCalendarEvents();
-  }, [session]);
+  }, []);
+
+  const renderEventTime = (ev: GoogleEvent) => {
+    const raw =
+      ev.start?.dateTime ??
+      (ev.start?.date ? `${ev.start.date}T00:00:00.000Z` : null);
+
+    if (!raw) return 'No start time';
+
+    try {
+      return new Date(raw).toLocaleString();
+    } catch {
+      return raw;
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-start justify-center p-6">
-      <div className="flex gap-6 w-full max-w-6xl">
-        
-        {/* Calendar Section */}
-        <div className="bg-white p-6 rounded-xl shadow-md w-2/3">
-          <h1 className="text-3xl font-bold text-gray-900 mb-4">Your Google Calendar</h1>
+    <div className="min-h-screen bg-gray-50 p-6 flex flex-col gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-6xl mx-auto w-full">
+        {/* Left: Calendar */}
+        <div className="lg:col-span-2 bg-white rounded-2xl shadow-lg p-6">
+          <div className="flex items-center mb-4">
+            <Calendar className="w-6 h-6 text-indigo-600 mr-2" />
+            <h2 className="text-xl font-bold text-gray-900">
+              Your Google Calendar
+            </h2>
+          </div>
 
-          {loading && <p className="text-gray-600">Loading events...</p>}
-          {error && <p className="text-red-500">{error}</p>}
-
-          {!loading && !error && events.length === 0 && (
-            <p className="text-gray-500">No upcoming events found.</p>
+          {loadingEvents && (
+            <p className="text-gray-500">Loading calendar events...</p>
           )}
 
-          {!loading && events.length > 0 && (
-            <ul className="divide-y divide-gray-200">
-              {events.map((event) => (
-                <li key={event.id} className="py-3">
-                  <p className="text-lg font-semibold text-gray-800">
-                    {event.summary || "Untitled Event"}
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    {event.start?.dateTime
-                      ? new Date(event.start.dateTime).toLocaleString()
-                      : event.start?.date || "No start date"}
-                  </p>
-                </li>
+          {!loadingEvents && eventsError && (
+            <p className="text-red-500 text-sm">{eventsError}</p>
+          )}
+
+          {!loadingEvents && !eventsError && events.length === 0 && (
+            <p className="text-gray-500 text-sm">
+              No upcoming events found. Try adding some events in Google
+              Calendar.
+            </p>
+          )}
+
+          {!loadingEvents && !eventsError && events.length > 0 && (
+            <div className="space-y-3">
+              {events.map((ev) => (
+                <div
+                  key={ev.id}
+                  className="border rounded-xl px-4 py-3 flex flex-col bg-gray-50"
+                >
+                  <span className="font-semibold text-gray-900">
+                    {ev.summary || '(No title)'}
+                  </span>
+                  <span className="text-sm text-gray-600">
+                    {renderEventTime(ev)}
+                  </span>
+                </div>
               ))}
-            </ul>
+            </div>
           )}
         </div>
 
-        {/* ✅ Tasks Section */}
-        <div className="bg-white p-6 rounded-xl shadow-md w-1/3">
-          <h2 className="text-2xl font-bold mb-4">Tasks</h2>
+        {/* Right: Tasks */}
+        <div className="bg-white rounded-2xl shadow-lg p-6">
+          <div className="flex items-center mb-4">
+            <ListTodo className="w-6 h-6 text-indigo-600 mr-2" />
+            <h2 className="text-xl font-bold text-gray-900">Tasks</h2>
+          </div>
+
+          {/* Existing Tasks UI component */}
           <Tasks />
         </div>
-
       </div>
     </div>
   );

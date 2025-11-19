@@ -1,29 +1,48 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config'; // Used for environment variables
+import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+
 import { CalendarController } from './calendar/calendar.controller';
 import { CalendarService } from './calendar/calendar.service';
+
 import { DbModule } from './db/db.module';
 import { CalendarModule } from './calendar/calendar.module';
 import { PlanningModule } from './planning/planning.module';
 import { PlanningController } from './planning.controller';
 
+import { GoogleAuthController } from './auth/google-auth.controller';
+import { GoogleAuthService } from './auth/google-auth.service';
+import { SupabaseAuthGuard } from './auth/supabase.guard';
+
 /**
- * The root module definition for the NestJS application.
+ * Root NestJS module.
+ *
+ * For your section:
+ *  - Registers GoogleAuthService + GoogleAuthController
+ *  - Registers SupabaseAuthGuard so it’s injectable for @UseGuards()
  */
 @Module({
   imports: [
-    // Load environment variables from a .env file (for local development)
-    // This is managed by Cloud Run in production.
+    // Load environment variables (global)
     ConfigModule.forRoot({
-      isGlobal: true, // Makes environment variables accessible everywhere
+      isGlobal: true,
     }),
     DbModule,
     CalendarModule,
     PlanningModule,
   ],
-  controllers: [AppController, CalendarController, PlanningController],
-  providers: [AppService, CalendarService],
+  controllers: [
+    AppController,
+    CalendarController,
+    PlanningController,
+    GoogleAuthController,
+  ],
+  providers: [
+    AppService,
+    CalendarService,
+    GoogleAuthService,
+    SupabaseAuthGuard,
+  ],
 })
-export class AppModule {}
+export class AppModule { }
