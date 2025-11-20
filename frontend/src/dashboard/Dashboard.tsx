@@ -3,12 +3,12 @@ import { Calendar, ListTodo } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import Tasks from '../tasks/Tasks';
 
-// --- Supabase client (same config as in App.tsx) ---
+// Supabase client (matches App.tsx config)
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// --- API base URL for backend ---
+// Backend API base URL
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
@@ -144,7 +144,6 @@ const Dashboard: React.FC = () => {
             <h2 className="text-xl font-bold text-gray-900">Tasks</h2>
           </div>
 
-          {/* Existing Tasks UI component */}
           <Tasks />
         </div>
       </div>

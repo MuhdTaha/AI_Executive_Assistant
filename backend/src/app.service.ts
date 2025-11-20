@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-// import { GoogleAPIService } from './google/google-api.service'; // To be implemented later
 // import { GeminiAPIService } from './gemini/gemini-api.service'; // To be implemented later
 
 /**
@@ -7,10 +6,7 @@ import { Injectable } from '@nestjs/common';
  */
 @Injectable()
 export class AppService {
-  // constructor(
-  //   private readonly googleApi: GoogleAPIService,
-  //   private readonly geminiApi: GeminiAPIService,
-  // ) {}
+  constructor() {}
 
   getHealthStatus(): string {
     return 'AI Executive Assistant API is Online.';
@@ -56,22 +52,5 @@ export class AppService {
     */
 
     return structuredResult;
-  }
-
-  // --- ADD THIS METHOD ---
-  async fetchGoogleCalendarEvents(accessToken: string) {
-    // Return dummy data for now
-    return [
-      {
-        id: '1',
-        summary: 'Test Event 1',
-        start: { dateTime: new Date().toISOString() },
-      },
-      {
-        id: '2',
-        summary: 'Test Event 2',
-        start: { dateTime: new Date(Date.now() + 3600 * 1000).toISOString() }, // +1h
-      },
-    ];
   }
 }
